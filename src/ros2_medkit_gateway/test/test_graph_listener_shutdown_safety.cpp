@@ -18,19 +18,26 @@
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 
-#include "ros2_medkit_gateway/ros2/status/ros2_lifecycle_state_reader.hpp"
 #include "ros2_medkit_gateway/ros2/transports/ros2_fault_service_transport.hpp"
 
 namespace {
 
-using ros2_medkit_gateway::Ros2LifecycleStateReader;
 using ros2_medkit_gateway::ros2::Ros2FaultServiceTransport;
 
 // The gateway's helper classes each own a private rclcpp::Node whose first use
 // of the ROS graph can land after rclcpp::shutdown() has stopped the context's
 // GraphListener - a shutdown signal while a service wait is in flight is the
-// ordinary case. Each test therefore runs a complete init/shutdown cycle of the
-// default context and exercises the helper across that boundary.
+// ordinary case. The test runs a complete init/shutdown cycle of the default
+// context and exercises the helper across that boundary.
+//
+// Only Ros2FaultServiceTransport is driven here, and it is the only one of the
+// three helper nodes this gives a falsifying test. Its clients are built in its
+// constructor, so a post-shutdown wait_for_service reaches
+// NodeGraph::get_graph_event() and the registration that follows it.
+// Ros2LifecycleStateReader and ParameterBeaconPlugin build their clients per
+// call, so after shutdown rcl_client_init fails first and the wait is never
+// reached: for those two the eager registration is correct by construction and
+// no test at this tier can tell the two versions apart.
 class GraphListenerShutdownSafetyTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -63,19 +70,6 @@ TEST_F(GraphListenerShutdownSafetyTest, FaultTransportSurvivesAServiceWaitAfterS
   // it and removes it. An unregistered node aborts the process here instead:
   // NodeNotFoundError escapes a noexcept destructor.
   transport.reset();
-  host.reset();
-}
-
-TEST_F(GraphListenerShutdownSafetyTest, LifecycleReaderSurvivesAStateReadAfterShutdown) {
-  auto host = std::make_shared<rclcpp::Node>("lifecycle_reader_host");
-  auto host_event = host->get_graph_event();
-  auto reader = std::make_unique<Ros2LifecycleStateReader>(host.get(), std::chrono::duration<double>(0.2));
-
-  rclcpp::shutdown();
-
-  EXPECT_NO_THROW({ EXPECT_FALSE(reader->get_state("/absent_lifecycle_node/get_state").has_value()); });
-
-  reader.reset();
   host.reset();
 }
 

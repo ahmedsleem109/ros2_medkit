@@ -357,7 +357,12 @@ if(BUILD_TESTING)
     # broken merge spends all of them. The glob default cuts that short and
     # reports a timeout with no test name, which is the one answer that says
     # nothing about which rule broke.
-    test_aggregator_only_configurations 300)
+    test_aggregator_only_configurations 300
+    # 30 churn cycles, each allowed CHURN_NODE_EXIT_TIMEOUT_SEC (30 s) to act on
+    # its signal, then a departure poll of DEPARTURE_TIMEOUT_SEC (25 s), then the
+    # quiet-node case. On the glob default a single slow exit eats a quarter of
+    # the budget and the message naming the cycle that broke never prints.
+    test_departed_node_discovery 300)
   # Names actually matched against a discovered test_name in the two loops
   # below. Checked against _MEDKIT_TEST_TIMEOUT_OVERRIDES itself after both
   # loops finish - see the FATAL_ERROR check at the end of this block - so a

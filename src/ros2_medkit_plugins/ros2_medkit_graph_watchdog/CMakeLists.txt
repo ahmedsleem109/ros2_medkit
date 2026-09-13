@@ -645,6 +645,16 @@ if(BUILD_TESTING)
     LABELS "integration;e2e"
     ENV "GATEWAY_TEST_PORT=19300" "WATCHDOG_E2E_SCENARIO=restart_departed" "${_WATCHDOG_E2E_ENV}")
 
+  # === lifecycle reader contention e2e (launch_testing) ===
+  #
+  # 60 (arming gate) + 15 (sampling window) plus the launch's own settle time.
+  # 240 to also cover teardown for TWO processes (sigterm 30 + sigkill 15 each,
+  # not fully serial).
+  medkit_add_launch_test(test_e2e_test_lifecycle_reader_contention_e2e.test.py
+    test/e2e/test_lifecycle_reader_contention_e2e.test.py TIMEOUT 240
+    LABELS "integration;e2e"
+    ENV "GATEWAY_TEST_PORT=19630" "${_WATCHDOG_E2E_ENV}")
+
   # === lifecycle reader identity e2e (launch_testing) ===
   #
   # 60 (arming gate) + 60 (reader visible) + 10 (settle window while both creators have

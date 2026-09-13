@@ -127,7 +127,9 @@ void ParameterBeaconPlugin::set_context(PluginContext & context) {
   // registered while absent from the listener's list:
   // NodeGraph::get_graph_event() spends should_add_to_graph_listener_ before
   // add_node() throws GraphListenerShutdownError, and ~NodeGraph then throws
-  // NodeNotFoundError out of a noexcept destructor.
+  // NodeNotFoundError out of a noexcept destructor. The window is narrowed, not
+  // closed: a shutdown between the make_shared above and this line spends the
+  // flag the same way, and rclcpp offers no way to un-spend it.
   (void)param_node_->get_graph_event();
 
   // Set default client factory if not injected (tests inject mock factory)

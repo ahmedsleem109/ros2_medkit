@@ -702,14 +702,44 @@ node is not part of this pass, the pass finishes normally, and the next pass
 decides again from a fresh read.
 
 The boundary, stated as a limit rather than as a promise: a node that
-advertises no service, no publisher and no subscription at all is not visible
-as an App. In practice a node cannot reach that state by configuration. Turning
-off parameter services, the parameter-event publisher and ``/rosout`` still
-leaves rclcpp's type-description service and a ``/parameter_events``
-subscription on the graph, which is more than enough; the fixture
-``demo_silent_node`` in ``ros2_medkit_integration_tests`` is exactly that node,
-and it is listed. Reaching the boundary takes an rcl-level node built with no
-endpoints of any kind.
+advertises no service, no publisher and no subscription at all is not visible as
+an App.
+
+What an rclcpp node puts on the graph, and what a ``NodeOptions`` flag can take
+away:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 25 35
+
+   * - Entity
+     - Distro
+     - Switched off by
+   * - the six parameter services
+     - all
+     - ``start_parameter_services(false)``
+   * - ``/parameter_events`` publisher
+     - all
+     - ``start_parameter_event_publisher(false)``
+   * - ``/rosout`` publisher
+     - all
+     - ``enable_rosout(false)``
+   * - ``/parameter_events`` subscription (the node's time source watches
+       ``use_sim_time``)
+     - all
+     - nothing - no ``NodeOptions`` flag reaches it
+   * - ``~/get_type_description`` service
+     - Jazzy and newer
+     - the read-only ``start_type_description_service`` parameter
+
+So a node that switches off everything ``NodeOptions`` offers is still visible:
+its time-source subscription alone keeps it an App on every supported distro.
+Reaching the boundary takes a node built below rclcpp - an rcl-level node with
+no endpoints of any kind - or an rclcpp node whose time source has been taken
+away. The fixture ``demo_silent_node`` in ``ros2_medkit_integration_tests``
+carries exactly one endpoint of its own, the ``/rosout`` publisher, and its test
+asserts that the graph still attributes it to the node and that the gateway
+still lists it.
 
 See Also
 --------

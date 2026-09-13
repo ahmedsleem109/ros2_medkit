@@ -30,11 +30,14 @@ Two scenarios:
    checked by the shared shutdown case.
 
 2. A minimal live node is still an App. ``silent_node`` runs with parameter
-   services, the parameter-event publisher and ``/rosout`` all switched off -
-   as little graph surface as a node can be configured to have - and must
-   still be listed. This is the control on the rule that removes names the
-   graph attributes no endpoint to: it may only remove names that are gone,
-   never a node that is merely quiet.
+   services and the parameter-event publisher switched off, keeping only its
+   ``/rosout`` publisher - the one endpoint rclcpp creates the same way on
+   every supported distro. The case names that endpoint through an rclpy probe
+   before asking the gateway, so a pass means "the graph attributes an endpoint
+   to this node AND the gateway lists it" rather than either half alone. This
+   is the control on the rule that removes names the graph attributes no
+   endpoint to: it may only remove names that are gone, never a node that is
+   merely quiet.
 """
 
 import os
@@ -48,6 +51,7 @@ from launch import LaunchDescription
 from launch.actions import TimerAction
 import launch_testing
 import launch_testing.actions
+import rclpy
 
 from ros2_medkit_test_utils.constants import (
     ALLOWED_EXIT_CODES,
@@ -85,9 +89,21 @@ CHURN_NODE_EXIT_TIMEOUT_SEC = 30.0 * get_time_scale()
 # reference; repeated here only as a budget.
 DEPARTURE_TIMEOUT_SEC = 25.0 * get_time_scale()
 
-# Start-up budget for a node with no log output of its own, so its arrival can
-# only be observed through the gateway.
+# Start-up budget for the quiet node, measured from the gateway side.
 SILENT_NODE_TIMEOUT_SEC = 30.0 * get_time_scale()
+
+SILENT_NODE_NAME = 'silent_node'
+
+# The endpoint the quiet node is guaranteed to own. rclcpp creates the /rosout
+# publisher for every node on every supported distro unless enable_rosout is
+# turned off, and this fixture leaves it on precisely so the control has an
+# endpoint that does not depend on the distro.
+SILENT_NODE_ENDPOINT = '/rosout'
+
+# The probe reads the graph directly, so it is bounded by DDS discovery rather
+# than by a gateway refresh.
+PROBE_TIMEOUT_SEC = 30.0 * get_time_scale()
+PROBE_INTERVAL_SEC = 0.5
 
 
 def generate_test_description():
@@ -164,6 +180,36 @@ class TestDepartedNodeDiscovery(GatewayTestCase):
         data = self.get_json('/apps')
         return [app['id'] for app in data.get('items', [])]
 
+    def _poll_probe_publishers(self, node_name):
+        """Topics the graph attributes to `node_name`, read with rclpy.
+
+        Asked of the graph rather than of the gateway on purpose: the gateway is
+        the thing under test, so the anti-vacuity check for this case cannot
+        come from it.
+        """
+        rclpy.init()
+        try:
+            probe = rclpy.create_node('departed_node_discovery_probe')
+            try:
+                deadline = time.monotonic() + PROBE_TIMEOUT_SEC
+                topics = []
+                while time.monotonic() < deadline:
+                    for name, namespace in probe.get_node_names_and_namespaces():
+                        if name != node_name:
+                            continue
+                        topics = [
+                            topic for topic, _ in
+                            probe.get_publisher_names_and_types_by_node(name, namespace)
+                        ]
+                        if topics:
+                            return topics
+                    time.sleep(PROBE_INTERVAL_SEC)
+                return topics
+            finally:
+                probe.destroy_node()
+        finally:
+            rclpy.shutdown()
+
     def test_01_gateway_serves_through_node_churn(self):
         """Repeated departures mid-pass leave the gateway answering."""
         _, ros_name, _ = DEMO_NODE_REGISTRY[CHURN_NODE_KEY]
@@ -200,17 +246,25 @@ class TestDepartedNodeDiscovery(GatewayTestCase):
 
     def test_02_a_node_with_no_parameter_services_is_still_an_app(self):
         """The endpoint rule removes names that are gone, not quiet nodes."""
+        publishers = self._poll_probe_publishers(SILENT_NODE_NAME)
+        self.assertIn(
+            SILENT_NODE_ENDPOINT, publishers,
+            f"the graph attributes no '{SILENT_NODE_ENDPOINT}' publisher to "
+            f"'{SILENT_NODE_NAME}' ({publishers}), so this case would pass on a "
+            'gateway that lists nothing at all',
+        )
+
         listed = self.poll_endpoint_until(
             '/apps',
-            lambda data: data if 'silent_node' in [
+            lambda data: data if SILENT_NODE_NAME in [
                 app['id'] for app in data.get('items', [])
             ] else None,
             timeout=SILENT_NODE_TIMEOUT_SEC,
         )
         self.assertIsNotNone(
             listed,
-            'a node with parameter services, the parameter-event publisher and '
-            f'/rosout all off must still be an App; /apps held {self._app_ids()}',
+            'a node with parameter services and the parameter-event publisher '
+            f'off must still be an App; /apps held {self._app_ids()}',
         )
 
 

@@ -110,10 +110,13 @@ Ros2FaultServiceTransport::Ros2FaultServiceTransport(rclcpp::Node * node) : node
   // listener. The flag is then spent on a node that was never listed, so
   // ~NodeGraph takes its remove_node() branch, the node is absent from
   // node_graph_interfaces_, and NodeNotFoundError escapes a noexcept destructor
-  // -> std::terminate, exit -6. A shutdown landing in the middle of a fault
-  // service wait is ordinary, so this cannot be left to timing. The returned
-  // event is not needed: nothing here waits on graph changes, and NodeGraph
-  // holds it weakly.
+  // -> std::terminate, exit -6. This narrows the window rather than closing it:
+  // a shutdown landing between the make_shared above and this line still spends
+  // the flag inside a throwing constructor, and rclcpp offers no way to un-spend
+  // it. What it removes is the part that is ordinary - a shutdown arriving
+  // during a fault service wait, which lasts as long as the wait does. The
+  // returned event is not needed: nothing here waits on graph changes, and
+  // NodeGraph holds it weakly.
   (void)client_node_->get_graph_event();
   executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
   executor_->add_node(client_node_);

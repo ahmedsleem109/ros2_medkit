@@ -114,9 +114,16 @@ def create_gateway_node(*, port=DEFAULT_PORT, name='ros2_medkit_gateway',
     ----------
     port : int
         HTTP server port (default: 8080).
-    name : str
+    name : str or None
         ROS node name. Override when a test launches more than one gateway
         so their names do not collide (e.g. ``gateway_with_scripts``).
+        ``None`` omits the name, and with it the ``-r __node:=`` ros-arg
+        launch_ros would otherwise emit. That remap is a GLOBAL argument, so
+        rclcpp applies it to every node the gateway process creates, not just
+        the gateway's own: the private client nodes (``_fault_clients``,
+        ``_sub``, ``_lifecycle_state_reader``) then all answer to the one name.
+        Pass ``None`` when a test needs to see those nodes under their own
+        names; the gateway falls back to its compiled default.
     extra_params : dict or None
         Additional ROS parameters merged into the node config.
     coverage : bool

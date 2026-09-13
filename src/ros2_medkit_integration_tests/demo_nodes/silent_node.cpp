@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// As little graph surface as a node can be configured to have: parameter
-// services, the parameter-event publisher and the /rosout publisher are all
-// off. What rclcpp still puts on the graph for it - the type-description
-// service and a /parameter_events subscription - is what keeps it a node the
-// gateway must list, so this fixture is the control on discovery's rule that a
-// name the graph attributes no endpoint to is not an App. That rule may only
-// remove names whose endpoints are gone, never a node that is merely quiet.
+// The control on discovery's rule that a name the graph attributes no endpoint
+// to is not an App: that rule may only remove names whose endpoints are gone,
+// never a node that is merely quiet. This node turns off everything a node can
+// be told to turn off except /rosout - parameter services and the
+// parameter-event publisher - and keeps the /rosout publisher, which is the one
+// endpoint rclcpp creates the same way on every supported distro. A test can
+// therefore name the endpoint it expects to see instead of relying on whichever
+// of rclcpp's implicit entities the local distro happens to create.
 //
-// `advertise:=true` adds a publisher, for a case that wants one endpoint of
-// its own rather than only the ones rclcpp creates.
+// `advertise:=true` adds a publisher of the node's own, for a case that wants
+// an endpoint rclcpp did not create.
 
 #include <memory>
 #include <string>
@@ -57,7 +58,6 @@ int main(int argc, char ** argv) {
     rclcpp::NodeOptions options;
     options.start_parameter_services(false);
     options.start_parameter_event_publisher(false);
-    options.enable_rosout(false);
     return std::make_shared<SilentNode>(options);
   });
 }
