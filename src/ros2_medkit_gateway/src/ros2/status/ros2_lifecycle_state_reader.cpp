@@ -24,6 +24,15 @@ namespace ros2_medkit_gateway {
 Ros2LifecycleStateReader::Ros2LifecycleStateReader(rclcpp::Node * host, std::chrono::duration<double> timeout)
   : timeout_(timeout) {
   client_node_ = std::make_shared<rclcpp::Node>(std::string(host->get_name()) + "_lifecycle_state_reader");
+  // Registered with the context's GraphListener here, while the context is
+  // known valid. get_state() creates its client and then waits for the service
+  // outside the mutex, so a shutdown can land between the two; the wait would
+  // then be this node's first graph use, and NodeGraph::get_graph_event()
+  // spends should_add_to_graph_listener_ before add_node() throws
+  // GraphListenerShutdownError. The node is then marked as registered while
+  // absent from the listener's list, and ~NodeGraph turns that into a
+  // NodeNotFoundError thrown out of a noexcept destructor.
+  (void)client_node_->get_graph_event();
   executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
   executor_->add_node(client_node_);
 }
