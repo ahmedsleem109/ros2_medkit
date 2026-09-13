@@ -49,6 +49,9 @@ set(GATEWAY_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../ros2_medkit_gateway"
 set(GATEWAY_SRC_INCLUDE_DIR "${GATEWAY_SRC_DIR}/include")
 set(LIFECYCLE_STATE_READER_SOURCES
   ${GATEWAY_SRC_DIR}/src/core/status/lifecycle_status_helpers.cpp
+  # The reader builds each call's callback group through ros2_common, which is
+  # where the gateway keeps node-entity creation.
+  ${GATEWAY_SRC_DIR}/src/ros2_common/callback_groups.cpp
   ${GATEWAY_SRC_DIR}/src/ros2/status/ros2_lifecycle_state_reader.cpp)
 # Fail early with a clear message if the reused gateway sources are missing
 # (e.g. building the package outside the workspace),
