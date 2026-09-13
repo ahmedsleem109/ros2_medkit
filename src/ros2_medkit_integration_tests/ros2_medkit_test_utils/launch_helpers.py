@@ -76,6 +76,11 @@ DEMO_NODE_REGISTRY = {
     # Regression fixture (#531): parameter services are discoverable
     # (wait_for_service succeeds) but list_parameters never replies.
     'unresponsive_param': ('demo_unresponsive_param_node', 'unresponsive_param', ''),
+    # As little graph surface as a node can be configured to have: parameter
+    # services, the parameter-event publisher and /rosout are all off. The
+    # control on discovery's "a name the graph attributes no endpoint to is
+    # not an App" rule.
+    'silent': ('demo_silent_node', 'silent_node', ''),
 }
 
 # Convenience groupings for callers that want subsets of demo nodes.

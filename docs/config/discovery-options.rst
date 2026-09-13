@@ -673,6 +673,43 @@ staleness behavior:
        plugins.parameter_beacon.beacon_ttl_sec: 15.0
        plugins.parameter_beacon.beacon_expiry_sec: 300.0
 
+What Makes a Node an App
+------------------------
+
+Runtime discovery lists the node names on the graph and then asks the graph
+about each name in turn. A name becomes an App only when that second question
+comes back with at least one endpoint: a service, a publisher or a
+subscription. A name the graph attributes nothing to is not turned into an App,
+and where the same App is also declared in a manifest it is linked as
+``x-medkit.is_online: false`` instead.
+
+The rule exists because a name on the graph is not by itself evidence that the
+node is there. Node names and endpoints live in different maps inside the RMW
+graph cache, filled and emptied by different code paths, and the two can
+disagree: a cache can go on naming a node whose endpoints it has already
+removed, and it does not correct itself on a timer, because the removal event
+for a participant is generated once. A gateway that trusted the name alone
+would keep serving that App for as long as the process runs. Asking about the
+endpoints costs nothing extra in the normal case - discovery already reads each
+node's services to build its operations - and it answers the question the name
+cannot.
+
+The same answer covers the ordinary race. Anything may happen between listing
+the names and asking about one of them, including the node exiting; rcl then
+reports the name as non-existent and raises. That is read the same way: the
+node is not part of this pass, the pass finishes normally, and the next pass
+decides again from a fresh read.
+
+The boundary, stated as a limit rather than as a promise: a node that
+advertises no service, no publisher and no subscription at all is not visible
+as an App. In practice a node cannot reach that state by configuration. Turning
+off parameter services, the parameter-event publisher and ``/rosout`` still
+leaves rclcpp's type-description service and a ``/parameter_events``
+subscription on the graph, which is more than enough; the fixture
+``demo_silent_node`` in ``ros2_medkit_integration_tests`` is exactly that node,
+and it is listed. Reaching the boundary takes an rcl-level node built with no
+endpoints of any kind.
+
 See Also
 --------
 

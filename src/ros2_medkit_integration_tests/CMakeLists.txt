@@ -118,6 +118,10 @@ add_executable(demo_unresponsive_param_node demo_nodes/unresponsive_param_node.c
 target_include_directories(demo_unresponsive_param_node PRIVATE ${_demo_include_dir})
 medkit_target_dependencies(demo_unresponsive_param_node rclcpp rcl_interfaces)
 
+add_executable(demo_silent_node demo_nodes/silent_node.cpp)
+target_include_directories(demo_silent_node PRIVATE ${_demo_include_dir})
+medkit_target_dependencies(demo_silent_node rclcpp std_msgs)
+
 install(TARGETS
   demo_engine_temp_sensor
   demo_engine_temp_monitor
@@ -137,6 +141,7 @@ install(TARGETS
   managed_lifecycle
   unreadable_lifecycle
   demo_unresponsive_param_node
+  demo_silent_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
