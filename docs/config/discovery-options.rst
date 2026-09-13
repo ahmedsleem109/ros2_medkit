@@ -51,7 +51,8 @@ In runtime mode, the gateway maps the ROS 2 graph to SOVD entities as follows:
 - **Components** - a single host-level Component is created from
   ``HostInfoProvider`` (see Default Component below). No synthetic/heuristic
   Components are created from namespaces.
-- **Apps** - each ROS 2 node becomes an App with ``source: "heuristic"``.
+- **Apps** - each ROS 2 node the graph still attributes an endpoint to becomes
+  an App with ``source: "heuristic"`` (see `What Makes a Node an App`_).
 - **Functions** - namespace grouping creates Function entities (see below).
 
 Default Component

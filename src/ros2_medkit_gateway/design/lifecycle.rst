@@ -97,7 +97,10 @@ online short-circuits to ``"notReady"`` without a GetState read (an offline node
 linger in the cache. The GetState read runs on a private node and executor (spun inline), so it
 never blocks or races the gateway executor; it is, however, serialized by an internal mutex, so a
 reachable-but-slow managed node holds that mutex across its spin and delays other concurrent
-``/status`` reads for up to the (short) read timeout.
+``/status`` reads for up to the (short) read timeout. That private node is named after the
+gateway, so there is exactly one reader per gateway: ``GatewayNode::get_lifecycle_state_reader()``
+creates it on first use and both the ``/status`` handler and any plugin that reads lifecycle state
+(through ``RosPluginContext::lifecycle_state_reader()``) share it.
 
 **Component status:** the synthetic host component (the one carrying ``host_metadata``,
 populated by ``HostInfoProvider``) is ``"ready"`` while the gateway is serving the request -
