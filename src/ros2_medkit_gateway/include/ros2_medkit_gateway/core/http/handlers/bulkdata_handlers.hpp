@@ -112,10 +112,10 @@ class BulkDataHandlers {
    * already a regular file is returned unchanged.
    *
    * The single place that decides which bytes a recording IS, which is why it is
-   * reachable from outside the class rather than being a private helper of the
-   * download path. `download()` streams the file this returns and reports its
-   * length, and `detail::rosbag_served_bytes` sizes the listing through it, so a
-   * change to which file a recording resolves to moves both at once.
+   * reachable from outside the class. `download()` streams the file this returns
+   * and reports its length, and `detail::rosbag_served_bytes` sizes the listing
+   * through it, so a change to which file a recording resolves to moves both at
+   * once.
    *
    * That does not make the two numbers equal in every case, and since the split
    * fix it deliberately does not. For a recording held in one storage file the
