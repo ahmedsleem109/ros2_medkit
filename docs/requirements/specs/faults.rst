@@ -60,6 +60,30 @@ Faults
    global defaults. Unspecified fields shall inherit from the layer below. When a fault code
    has no override, the resolved per-entity or global configuration shall apply unchanged.
 
+.. req:: Configurable STALE Severity
+   :id: REQ_INTEROP_109
+   :status: verified
+   :tags: Faults
+
+   The diagnostic bridge shall map a ``DiagnosticStatus`` of level STALE to a configurable
+   fault severity, defaulting to CRITICAL, with per-diagnostic overrides selected by longest
+   matching prefix on the status name. A STALE status resolving to a non-CRITICAL severity
+   shall be subject to debounce filtering like any other report. An override that does not
+   name a valid severity shall be reported and ignored, leaving the configured default in
+   force.
+
+.. req:: Reporter-Supplied Fault Evidence
+   :id: REQ_INTEROP_110
+   :status: verified
+   :tags: Faults
+
+   A FAILED fault report shall be able to carry key-value measurements, which the fault
+   manager shall retain in the fault's freeze frame under a reserved key distinct from
+   captured topic values, and serve with the fault's environment data. Evidence shall be
+   retained across reports that carry none, preserved when a confirmation capture rebuilds
+   the frame, and bounded per fault code in entry count and value length, with entries
+   exceeding a bound dropped whole and reported rather than truncated.
+
 .. req:: Fault Snapshot and Rosbag Capture
    :id: REQ_INTEROP_088
    :status: verified
