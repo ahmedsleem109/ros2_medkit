@@ -104,6 +104,7 @@ class TestFaultCodeHealingRestart(unittest.TestCase):
         ))
         proc = subprocess.Popen(
             [self.exe, '--ros-args', '-r', '__node:=fault_manager', '--params-file', params])
+        self.addCleanup(self._kill, proc)
         report = self.node.create_client(ReportFault, '/fault_manager/report_fault')
         get = self.node.create_client(GetFault, '/fault_manager/get_fault')
         self.assertTrue(report.wait_for_service(timeout_sec=15.0), 'report_fault not available')
@@ -121,6 +122,13 @@ class TestFaultCodeHealingRestart(unittest.TestCase):
         else:
             self.fail('fault_manager did not answer after start')
         return proc, report, get
+
+    @staticmethod
+    def _kill(proc):
+        """Kill the fault manager if it is still running, so it never outlives the test."""
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
     def _stop(self, proc, clients):
         """Stop the fault manager cleanly and check it exited with 0."""

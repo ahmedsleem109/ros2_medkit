@@ -375,6 +375,10 @@ override carries:
 - A code that is not listed resolves exactly as it did before: entity override if one
   matches, global otherwise. The layer is opt-in and changes nothing on its own.
 - Like the entity file, this one is loaded once at node startup. Changes require a restart.
+- At startup, a HEALED fault is reclassified to CLEARED when its code has healing disabled.
+  The code's entry in this file decides, and the global ``healing_enabled`` applies when the
+  entry does not set it. Entity overrides are not used here, because a stored fault belongs
+  to its code and can have several sources.
 
 .. note::
 
