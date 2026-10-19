@@ -108,8 +108,7 @@ Data Flow
    else level == WARN/ERROR/STALE
        Bridge -> Reporter : report(fault_code, severity, msg, values)
        Reporter -> FM : ReportFault(FAILED, evidence)
-       note right: Creates/updates fault,
-keeps evidence in freeze frame
+       note right: Creates/updates fault and stores the evidence
    end
 
    @enduml
@@ -154,8 +153,7 @@ Main Components
 
 3. **FaultReporter Integration** - Bridges to FaultManager
    - OK status → ``report_passed()`` for healing
-   - WARN/ERROR/STALE → ``report()`` with mapped severity and the status ``values`` as
-     evidence
+   - WARN/ERROR/STALE → ``report()`` with mapped severity and ``values`` as evidence
 
 Configuration
 -------------
