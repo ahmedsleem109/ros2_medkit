@@ -41,9 +41,8 @@ The diagnostic bridge:
 
 .. warning::
 
-   This table previously documented STALE as SEVERITY_ERROR. The bridge has always sent
-   SEVERITY_CRITICAL, and CRITICAL **bypasses debounce** in the fault manager, so a STALE
-   status confirms a CRITICAL fault on its first sample.
+   STALE reports SEVERITY_CRITICAL by default, and CRITICAL **bypasses debounce** in the fault
+   manager, so a STALE status confirms a CRITICAL fault on its first sample.
 
    That matters because STALE is the one level a node can reach by design: a GPS goes STALE
    in every tunnel, an IMU reports covariance -1 while it settles. Left unconfigured, every
@@ -117,42 +116,48 @@ Evidence
 --------
 
 A FAILED report carries the ``DiagnosticStatus`` key-values to the fault manager, which keeps
-them in the fault's freeze frame and serves them from
+them per occurrence of the fault and serves them in the fault's freeze frame from
 ``GET /api/v1/apps/{app}/faults/{code}``. The fault is reported under the bridge's
 ``source_id``, so with the bridge defaults the app is ``diagnostic_bridge``:
 
 .. code-block:: console
 
-   $ curl -s localhost:8080/api/v1/apps/diagnostic_bridge/faults/FUSION_DIVERGED | jq '.environment_data.snapshots[] | select(.type == "freeze_frame" and .name == "freeze_frame") | .data["x-medkit-reported"]'
+   $ curl -s localhost:8080/api/v1/apps/diagnostic_bridge/faults/FUSION_DIVERGED | jq '.environment_data.snapshots[] | select(.type == "freeze_frame" and .name == "freeze_frame") | .data["x-medkit"].reported'
    {
-     "rejected_fixes": "37",
-     "nis": "0.03"
+     "/diagnostic_bridge": {
+       "nis": { "value": "0.03", "reported_at": "2026-10-19T07:54:03.120Z" },
+       "rejected_fixes": { "value": "37", "reported_at": "2026-10-19T07:54:03.120Z" }
+     }
    }
 
-If topics were also captured for the code, the list has one entry per topic before the
-freeze frame. Those entries also have type ``freeze_frame``, so the filter checks the name
-too.
-
-A node that publishes outlier counts and gate statistics has already computed why it is
-unhappy; before this the bridge read those values only to pick a fault code and dropped the
-rest, so the fault record said a node complained but not what it saw.
+The evidence is grouped by ``source_id``, then by key. Each key has its value and the time of
+the last report that set it. If topics were also captured for the code, the list has one entry
+per topic before the freeze frame. Those entries also have type ``freeze_frame``, so the filter
+checks the name too. The freeze frame then holds only the evidence, because the topic values
+are already in those entries.
 
 Evidence is written on **every** FAILED report, not only the one that confirms the fault, so a
 code that never confirms still has evidence. Only the **last** value of each key is kept, and
 near-miss entries do not store evidence. So a code with several near misses shows only the
 numbers from its latest report.
 
+A new occurrence of the fault (a FAILED report after it was cleared) starts with no evidence.
+With ``snapshots.retain_on_clear`` on, the fault manager keeps the evidence of older
+occurrences too, up to ``snapshots.max_evidence_occurrences``, but serves only the current one.
+
 The frame's other keys are topic names sampled by the fault manager, always fully qualified
-and so always starting with ``/``. ``x-medkit-reported`` cannot collide with one, which is what lets
-a reader tell a value the reporter asserted from one the fault manager sampled.
+and so always starting with ``/``. ``x-medkit`` cannot collide with one, which is what lets a
+reader tell a value the reporter asserted from one the fault manager sampled.
 
 .. note::
 
-   Evidence limits per fault code: at most 32 keys, 128 bytes per key and 512 bytes per value
-   (bytes, not characters). There is no limit on total size. Bytes that are not valid UTF-8
-   are stored as U+FFFD, and the limits are checked after that. An entry over a limit is
-   dropped, not cut short, and a warning is logged. The fault is recorded either way. A key already stored can always be updated, so a steady reporter
-   at the bound can still refresh its own numbers.
+   Evidence limits per occurrence of a fault code: at most 32 keys over all sources together,
+   128 bytes per key and 512 bytes per value (bytes, not characters). There is no limit on
+   total size. Bytes that are not valid UTF-8 are stored as U+FFFD, and the limits are checked
+   after that. An entry over a limit is dropped, not cut short, and a warning is logged. If
+   the dropped entry updates a key already stored, that key is removed, so an old value is not
+   shown as current. The fault is recorded either way. A key already stored can always be
+   updated, so a steady reporter at the bound can still refresh its own numbers.
 
 Custom Fault Code Mappings
 --------------------------

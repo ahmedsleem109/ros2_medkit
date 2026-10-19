@@ -22,6 +22,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -128,29 +129,46 @@ struct SnapshotData {
   int64_t capture_id{0};
 };
 
-/// Compact freeze-frame for a fault: one JSON object with the value of each captured topic
-/// at confirmation, plus the evidence sent with FAILED reports (under kReportedEvidenceKey).
-/// Unlike per-topic snapshots, it is keyed by fault_code (one row per code) and is kept
-/// across clear_fault.
-/// The row is written by the capture at confirmation, or by a FAILED report with evidence.
-/// So a code with no capture config can still have a row that holds only evidence. A code
-/// with neither has no row (lookup returns nullopt).
+/// Compact freeze-frame captured when a fault confirms: a single JSON object mapping
+/// each captured topic to its latest value at confirmation time. Unlike per-topic
+/// snapshots, a freeze-frame is keyed by fault_code (one row per code) and is RETAINED
+/// across clear_fault, so the confirmed-state record persists after acknowledgement.
+/// A row exists only for fault codes with a configured capture set; a fault code with
+/// no capture configured gets no row at all (lookup returns nullopt, never an empty {}).
+/// Reporter evidence is not stored here but in its own table (ReportedEvidence); GetFault
+/// adds it to the frame it serves.
 struct FreezeFrameData {
   std::string fault_code;
   std::string data;  ///< Compact JSON object: {"<topic>": <value>, ...}
   int64_t captured_at_ns{0};
 };
 
-/// Key inside the freeze-frame JSON object under which reporter-supplied evidence is kept.
+/// One evidence entry: a key-value pair a reporter sent in the `evidence` field of a
+/// FAILED report.
 ///
-/// The frame's other keys are ROS topic names, which are always fully qualified and so
-/// always start with '/'. This name cannot collide with one, which is what lets a reader
-/// tell a value the reporter asserted from one the fault manager sampled off a topic.
-inline constexpr const char * kReportedEvidenceKey = "x-medkit-reported";
+/// Stored in its own table, keyed by (fault_code, occurrence, source_id, key). Only the
+/// report handler writes it, so it never races with the capture thread, which writes the
+/// freeze frame. The occurrence is the fault's occurrence_count after the report, so the
+/// evidence of one occurrence stays apart from the next one, like the per-topic snapshots.
+struct ReportedEvidence {
+  std::string fault_code;
+  uint32_t occurrence{0};
+  std::string source_id;
+  std::string key;
+  std::string value;
+  int64_t reported_at_ns{0};  ///< Time of the last report that set this key
+};
 
-/// Most evidence entries kept for one fault code. A reporter publishing at 10 Hz must not
-/// be able to grow the fault store without limit, and a fault explained by more than this
-/// many numbers is not explained by them.
+/// Vendor key in the served freeze-frame object. Evidence is served under
+/// `"x-medkit": {"reported": {...}}`. The frame's other keys are ROS topic names, which
+/// always start with '/', so the two cannot clash.
+inline constexpr const char * kVendorExtensionKey = "x-medkit";
+inline constexpr const char * kReportedEvidenceKey = "reported";
+
+/// Most evidence keys kept for one occurrence of a fault code, summed over all its
+/// sources. A reporter publishing at 10 Hz must not be able to grow the fault store
+/// without limit, and a fault explained by more than this many numbers is not explained
+/// by them.
 inline constexpr size_t kMaxEvidenceEntries = 32;
 
 /// Longest evidence key kept, in bytes. A longer key is dropped together with its value.
@@ -160,27 +178,41 @@ inline constexpr size_t kMaxEvidenceKeyBytes = 128;
 /// cut short, because half a number is worse than no number.
 inline constexpr size_t kMaxEvidenceValueBytes = 512;
 
-/// Merge reporter-supplied evidence into a freeze-frame JSON document.
-///
-/// @param frame_json Existing frame ("" or invalid JSON is treated as an empty object).
-/// @param evidence Key-value pairs from the report, in arrival order.
-/// @param dropped Set to the number of entries rejected by the bounds above.
-/// @return The frame with the evidence merged under kReportedEvidenceKey. Later reports
-///         update the keys they name and leave the rest, so a fault accumulates what its
-///         sources said rather than keeping only the last report's view.
-std::string merge_reported_evidence(const std::string & frame_json,
-                                    const std::vector<std::pair<std::string, std::string>> & evidence,
-                                    size_t & dropped);
+/// What one report does to the stored evidence of its (fault code, occurrence, source).
+struct EvidenceUpdate {
+  std::vector<std::pair<std::string, std::string>> upserts;  ///< key -> value to store
+  std::vector<std::string> deletes;                          ///< keys to remove
+  size_t dropped{0};                                         ///< entries rejected by the bounds
+};
 
-/// Carry reporter evidence from an existing frame into a newly built one.
+/// Apply the evidence bounds to one report. Shared by every backend so they agree.
 ///
-/// A confirmation capture rebuilds the frame from the topics it sampled and would otherwise
-/// drop evidence reported before it. Ordering decides which of the two writes lands last, so
-/// the capture path must preserve rather than replace.
-std::string preserve_reported_evidence(const std::string & frame_json, const std::string & previous_json);
+/// Invalid UTF-8 in keys and values is replaced with U+FFFD first, and the bounds are
+/// checked on the result, because that is what gets stored. An entry with an empty or
+/// oversized key is dropped. An entry with an oversized value is dropped and its stored key
+/// is deleted, so an old value is not shown as current. A new key is dropped once the
+/// occurrence holds kMaxEvidenceEntries keys; a key already stored is always updated.
+/// @param stored_keys Keys stored for this occurrence, as (source_id, key)
+/// @param source_id Source of this report
+/// @param evidence Key-value pairs from the report, in arrival order
+EvidenceUpdate plan_evidence_update(const std::set<std::pair<std::string, std::string>> & stored_keys,
+                                    const std::string & source_id,
+                                    const std::vector<std::pair<std::string, std::string>> & evidence);
 
-/// Whether a freeze-frame document carries reporter evidence.
-bool has_reported_evidence(const std::string & frame_json);
+/// Lowest occurrence whose evidence is kept when @p occurrence is the current one. Shared by
+/// every backend. Occurrence numbers go up by one per occurrence, so keeping the last N
+/// occurrences is a range. An occurrence without evidence still counts as one of the N.
+/// @param retain Whether snapshots.retain_on_clear is on
+/// @param max_occurrences Most occurrences kept with retention on (0 = unlimited)
+uint32_t oldest_kept_evidence_occurrence(uint32_t occurrence, bool retain, size_t max_occurrences);
+
+/// Build the freeze-frame document GetFault serves.
+///
+/// @param frame_json Stored topic values ("" when they are not served or there are none)
+/// @param evidence Evidence of the current occurrence
+/// @return The topic values plus `"x-medkit": {"reported": {"<source_id>": {"<key>":
+///         {"value": "37", "reported_at": "<ISO 8601>"}}}}` when there is evidence
+std::string build_served_freeze_frame(const std::string & frame_json, const std::vector<ReportedEvidence> & evidence);
 
 /// Derive a recording's public identity from its bag path: the directory basename,
 /// `fault_<CODE>_<millis>`. Faults of one burst share a recording and therefore share
@@ -385,21 +417,46 @@ class FaultStorage {
     return 0;
   }
 
-  /// Store the compact freeze-frame for a fault (topic values, plus evidence under
-  /// kReportedEvidenceKey). Written by the capture at confirmation and by FAILED reports
-  /// with evidence. Keyed by fault_code: a later write for the same code replaces it.
-  /// The frame is retained across clear_fault so the confirmed-state record survives
-  /// acknowledgement.
+  /// Store the compact freeze-frame captured for a fault (JSON dict of topic values).
+  /// Keyed by fault_code: a later capture for the same code replaces the frame. The frame
+  /// is retained across clear_fault so the confirmed-state record survives acknowledgement.
   /// Storage is bounded by the number of distinct fault codes (one row per code, replaced
   /// in place); rows are never evicted. Faults themselves are never deleted (clear_fault
   /// only flips status), so there is currently no delete hook to tie eviction to.
   /// @param frame The freeze-frame to store
   virtual void store_freeze_frame(const FreezeFrameData & frame) = 0;
 
-  /// Get the freeze-frame stored for a fault, if any.
+  /// Get the freeze-frame captured for a fault, if any.
   /// @param fault_code The fault code to look up
-  /// @return The freeze-frame if a capture ran or evidence was reported, nullopt otherwise
+  /// @return The freeze-frame if one was captured, nullopt otherwise (including fault
+  ///         codes with no capture configured, which never get a row)
   virtual std::optional<FreezeFrameData> get_freeze_frame(const std::string & fault_code) const = 0;
+
+  /// Most occurrences per fault code whose evidence is kept while
+  /// set_retain_snapshots_on_clear is on (0 = unlimited). The oldest go first. Without
+  /// retention only the current occurrence is kept, whatever this says.
+  virtual void set_max_evidence_occurrences_per_fault(size_t /*max_count*/) {
+  }
+
+  /// Store the evidence of one FAILED report, in one transaction.
+  ///
+  /// First removes the evidence of older occurrences of the code: all of them, or, with
+  /// set_retain_snapshots_on_clear on, those past set_max_evidence_occurrences_per_fault.
+  /// Then applies plan_evidence_update to the rows of (fault_code, occurrence).
+  /// @param fault_code The code just reported
+  /// @param occurrence The fault's occurrence_count after the report
+  /// @param source_id Source of the report
+  /// @param evidence Key-value pairs from the report, in arrival order
+  /// @param reported_at_ns Time of the report
+  /// @return How many entries the bounds dropped
+  virtual size_t store_reported_evidence(const std::string & fault_code, uint32_t occurrence,
+                                         const std::string & source_id,
+                                         const std::vector<std::pair<std::string, std::string>> & evidence,
+                                         int64_t reported_at_ns) = 0;
+
+  /// Get the evidence of one occurrence of a fault, ordered by source_id, then key.
+  virtual std::vector<ReportedEvidence> get_reported_evidence(const std::string & fault_code,
+                                                              uint32_t occurrence) const = 0;
 
   /// Set the maximum number of near-miss entries retained per fault code.
   ///
@@ -568,6 +625,13 @@ class InMemoryFaultStorage : public FaultStorage {
   void store_freeze_frame(const FreezeFrameData & frame) override;
   std::optional<FreezeFrameData> get_freeze_frame(const std::string & fault_code) const override;
 
+  void set_max_evidence_occurrences_per_fault(size_t max_count) override;
+  size_t store_reported_evidence(const std::string & fault_code, uint32_t occurrence, const std::string & source_id,
+                                 const std::vector<std::pair<std::string, std::string>> & evidence,
+                                 int64_t reported_at_ns) override;
+  std::vector<ReportedEvidence> get_reported_evidence(const std::string & fault_code,
+                                                      uint32_t occurrence) const override;
+
   void set_max_rosbags_per_fault(size_t max_count) override;
 
   size_t set_max_near_misses_per_fault(size_t max_count) override;
@@ -608,6 +672,9 @@ class InMemoryFaultStorage : public FaultStorage {
   std::map<std::string, FaultState> faults_;
   std::vector<SnapshotData> snapshots_;
   std::map<std::string, FreezeFrameData> freeze_frames_;  ///< fault_code -> freeze-frame (retained across clear)
+  /// (fault_code, occurrence, source_id, key) -> entry, the same key as the SQL tables
+  std::map<std::tuple<std::string, uint32_t, std::string, std::string>, ReportedEvidence> reported_evidence_;
+  size_t max_evidence_occurrences_per_fault_{0};  ///< 0 = unlimited
   /// One entry per LINK, mirroring the flat SQLite table rather than a map keyed by
   /// fault code - a fault holds several recordings now, and a recording several
   /// faults.

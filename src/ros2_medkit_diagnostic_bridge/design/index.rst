@@ -240,5 +240,6 @@ Evidence
 ~~~~~~~~
 
 The status ``values`` are sent as ``ReportFault.evidence`` with every FAILED report. The fault
-manager keeps them in the fault's freeze frame under ``x-medkit-reported``. See
+manager keeps them per occurrence and serves them in the fault's freeze frame under
+``"x-medkit": {"reported": ...}``, grouped by ``source_id``. See
 :doc:`/config/diagnostic-bridge`.

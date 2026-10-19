@@ -95,9 +95,10 @@ reporter_->report("MOTOR_OVERHEAT",
 
 Same as above, but also sends key-value evidence with the report, for example the numbers
 that made the reporter decide something is wrong. Filtering works the same way. The fault
-manager keeps the evidence in the fault's freeze frame under `x-medkit-reported` (last value
-per key; at most 32 keys, 128 bytes per key, 512 bytes per value; entries over a limit are
-dropped with a warning). The fault manager must be built from the same `ros2_medkit_msgs`
+manager keeps the evidence per occurrence of the fault and serves it in the fault's freeze
+frame under `x-medkit.reported`, grouped by `source_id` (last value per key; at most 32 keys
+per occurrence, 128 bytes per key, 512 bytes per value; entries over a limit are dropped with
+a warning). The fault manager must be built from the same `ros2_medkit_msgs`
 (see that package's README).
 
 ```cpp

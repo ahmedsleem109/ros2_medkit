@@ -32,9 +32,9 @@ to every diagnostic the bridge forwards.
 
 ## Evidence
 
-A FAILED report carries the status's key-values to the fault manager, which keeps them in the
-fault's freeze frame under the reserved key `x-medkit-reported` and serves them back from
-`GET /api/v1/apps/{app}/faults/{code}` (with the bridge defaults the app is
+A FAILED report carries the status's key-values to the fault manager, which keeps them per
+occurrence of the fault and serves them in the fault's freeze frame under `x-medkit.reported`,
+from `GET /api/v1/apps/{app}/faults/{code}` (with the bridge defaults the app is
 `diagnostic_bridge`):
 
 ```jsonc
@@ -46,15 +46,20 @@ fault's freeze frame under the reserved key `x-medkit-reported` and serves them 
         "type": "freeze_frame",
         "name": "freeze_frame",
         "data": {
-          "x-medkit-reported": { "rejected_fixes": "37", "nis": "0.03" }
+          "x-medkit": {
+            "reported": {
+              "/diagnostic_bridge": {
+                "nis": { "value": "0.03", "reported_at": "2026-10-08T09:15:02.123Z" },
+                "rejected_fixes": { "value": "37", "reported_at": "2026-10-08T09:15:02.123Z" }
+              }
+            }
+          }
         },
         "x-medkit": {
           "topic": "",
           "message_type": "",
-          "full_data": {
-            "x-medkit-reported": { "rejected_fixes": "37", "nis": "0.03" }
-          },
-          "captured_at": "2026-10-08T09:15:02.123456789Z"
+          "full_data": { "x-medkit": { "reported": { "...": "same as data" } } },
+          "captured_at": "2026-10-08T09:15:02.123Z"
         }
       }
     ]
@@ -62,17 +67,20 @@ fault's freeze frame under the reserved key `x-medkit-reported` and serves them 
 }
 ```
 
-The numbers a publisher already computed to decide something was wrong are usually the whole
-explanation of the fault, and before this they were dropped. The frame's other keys are topic
-names sampled by the fault manager, which are always fully qualified and start with `/`, so a
-reader can always tell a value the reporter asserted from one the fault manager sampled.
+The evidence is grouped by `source_id`, then by key, and each key has the time of the last
+report that set it. When the code has captured topics, the frame holds only the evidence,
+because the topic values are already in the per-topic entries. The frame's other keys are
+topic names sampled by the fault manager, which are always fully qualified and start with
+`/`, so a reader can always tell a value the reporter asserted from one the fault manager
+sampled.
 
 `keyvalue_codes` still reads the same values to pick a fault code; the two uses are
 independent and either can be used without the other. Only the last value of each key is
-kept, and near-miss entries do not store evidence. Limits per fault code: 32 keys, 128 bytes
-per key, 512 bytes per value, no limit on total size. An entry over a limit is dropped with a
-warning, not cut short, and the fault is recorded either way. Bytes that are not valid UTF-8
-are stored as U+FFFD.
+kept, and near-miss entries do not store evidence. A new occurrence (a FAILED report after a
+clear) starts with no evidence. Limits per occurrence: 32 keys over all sources, 128 bytes per
+key, 512 bytes per value, no limit on total size. An entry over a limit is dropped with a
+warning, not cut short, and the fault is recorded either way. If it updates a stored key, that
+key is removed. Bytes that are not valid UTF-8 are stored as U+FFFD.
 
 ## Quick Start
 

@@ -40,8 +40,6 @@ from rclpy.serialization import serialize_message
 from ros2_medkit_msgs.msg import Fault, Snapshot
 from ros2_medkit_msgs.srv import GetFault, ListFaults
 
-REPORTED_KEY = 'x-medkit-reported'
-
 # Replaced in the serialized message. Same length as the new bytes, so the
 # string length in the message stays correct.
 UTF8_PLACEHOLDER = b'80#C'
@@ -139,7 +137,7 @@ class TestStaleAndEvidence(unittest.TestCase):
         return next((f for f in faults if f.fault_code == code), None)
 
     def _reported_evidence(self, code):
-        """Return the evidence object served by GetFault, or None."""
+        """Return the evidence served by GetFault as {key: value}, or None."""
         request = GetFault.Request()
         request.fault_code = code
         result = self._call(self.get_fault_client, request)
@@ -152,7 +150,13 @@ class TestStaleAndEvidence(unittest.TestCase):
         ]
         if not frames:
             return None
-        return json.loads(frames[0].data).get(REPORTED_KEY)
+        by_source = json.loads(frames[0].data).get('x-medkit', {}).get('reported')
+        if not by_source:
+            return None
+        # Every status comes from the bridge, so there is one source.
+        self.assertEqual(len(by_source), 1, by_source)
+        entries = next(iter(by_source.values()))
+        return {key: entry['value'] for key, entry in entries.items()}
 
     def _status(self, name, level, values=()):
         return DiagnosticStatus(

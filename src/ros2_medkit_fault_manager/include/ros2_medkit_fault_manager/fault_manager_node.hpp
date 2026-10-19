@@ -206,16 +206,15 @@ class FaultManagerNode : public rclcpp::Node {
   void warn_on_conflicting_debounce_policy(const std::string & fault_code, const std::string & source_id,
                                            const DebounceConfig & resolved);
 
-  /// Merge reporter-supplied evidence into a fault's freeze frame.
+  /// Store reporter-supplied evidence for the fault's current occurrence.
   ///
-  /// Called for every FAILED report that carries any. Bounded per fault code; entries the
-  /// bounds reject are dropped and logged rather than truncated. The frame is read, merged
-  /// and written back, which is safe because the node's single-threaded executor serialises
-  /// this with every other callback that touches storage.
-  /// @param fault_code The code just reported.
+  /// Called for every FAILED report that carries any. Bounded per occurrence; entries the
+  /// bounds reject are dropped and logged rather than truncated.
+  /// @param fault The fault after the report, for its code and occurrence_count.
+  /// @param source_id Source of the report.
   /// @param evidence Key-value measurements from the report.
   /// @param event_time Wall-clock time of the report.
-  void store_reported_evidence(const std::string & fault_code,
+  void store_reported_evidence(const ros2_medkit_msgs::msg::Fault & fault, const std::string & source_id,
                                const std::vector<diagnostic_msgs::msg::KeyValue> & evidence,
                                const rclcpp::Time & event_time);
 
