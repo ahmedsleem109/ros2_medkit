@@ -242,9 +242,12 @@ the occurrence, not every report within it.
 
 Thresholds must satisfy ``confirmation_threshold < 0 <= healing_threshold`` (``healing_threshold == 0``
 means heal on a single PASSED event); the node validates the
-merged per-entity config at startup, logs a warning, and falls back to safe defaults if not. When
-healing is disabled, any HEALED row left by a previous (healing-enabled) run is reclassified to
-CLEARED once at startup so it does not behave inconsistently under the latch.
+merged per-entity and per-fault-code config at startup, logs a warning, and falls back to safe
+defaults if not. When healing is disabled for a code, any HEALED row of that code left by a
+previous (healing-enabled) run is reclassified to CLEARED once at startup so it does not behave
+inconsistently under the latch. The code's own ``healing_enabled`` decides, and the global value
+applies when the code does not set one. Entity overrides are not used, because a stored fault
+belongs to its code and can have several sources.
 
 Rosbag Black-Box Recording
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

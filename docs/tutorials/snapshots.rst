@@ -48,9 +48,10 @@ configuration always overrides the zero-config fallback when present.
    watchdog does, goes through debounce and healing, and nothing on that path
    deletes the snapshots: with ``healing_enabled`` the fault heals once its
    counter reaches ``healing_threshold``, without it (the default) it stays
-   CONFIRMED, and its snapshots stay either way. Starting with healing disabled takes the
-   value snapshots of leftover HEALED rows as it reclassifies them, without a
-   clear at all. ``snapshots.retain_on_clear: true`` keeps the value snapshots
+   CONFIRMED, and its snapshots stay either way. Starting with healing disabled, globally or for
+   a code through its own ``healing_enabled: false``, takes the value snapshots
+   of that code's leftover HEALED rows as it reclassifies them, without a clear
+   at all. ``snapshots.retain_on_clear: true`` keeps the value snapshots
    across all of it, and only those. The rosbag recording is not covered by that
    setting. A clear deletes the recording under
    ``snapshots.rosbag.auto_cleanup``, unless that is off or

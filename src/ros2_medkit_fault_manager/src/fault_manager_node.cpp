@@ -389,7 +389,8 @@ FaultManagerNode::FaultManagerNode(const rclcpp::NodeOptions & options) : Node("
           }
         }
       }
-      RCLCPP_INFO(get_logger(), "Healing disabled: reclassified %zu stale HEALED fault(s) as CLEARED",
+      RCLCPP_INFO(get_logger(),
+                  "Reclassified %zu stale HEALED fault(s) as CLEARED, because healing is disabled for their codes",
                   reclassified.size());
     }
   } catch (const FaultStorage::IgnorableConnectionException & e) {
