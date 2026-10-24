@@ -474,9 +474,29 @@ DefaultScriptProvider::start_execution(const std::string & entity_id, const std:
   // Collect env vars to set in child process
   auto env_vars = resolved->env;
 
+  // Without a stdin payload the child reads /dev/null, never the gateway's stdin.
+  int devnull_fd = -1;
+  if (!pass_stdin_json) {
+    devnull_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (devnull_fd < 0) {
+      close(stdout_pipe[0]);
+      close(stdout_pipe[1]);
+      close(stderr_pipe[0]);
+      close(stderr_pipe[1]);
+      {
+        std::lock_guard<std::mutex> lock(exec_mutex_);
+        active_execution_count_--;  // Release reserved slot
+      }
+      return tl::make_unexpected(ScriptBackendErrorInfo{ScriptBackendError::Internal, "Failed to open /dev/null"});
+    }
+  }
+
   // Fork
   pid_t child_pid = fork();
   if (child_pid < 0) {
+    if (devnull_fd >= 0) {
+      close(devnull_fd);
+    }
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
     close(stderr_pipe[0]);
@@ -504,20 +524,25 @@ DefaultScriptProvider::start_execution(const std::string & entity_id, const std:
     sigemptyset(&no_signals);
     sigprocmask(SIG_SETMASK, &no_signals, nullptr);
 
-    // Redirect stdin if passing JSON
+    // Close the read ends first. With fd 0 closed in the gateway, a pipe end can be fd 0, and
+    // redirecting stdin before this would close the redirect again.
+    close(stdout_pipe[0]);
+    close(stderr_pipe[0]);
+
+    // Redirect stdin
     if (pass_stdin_json) {
       close(stdin_pipe[1]);  // Close write end
       dup2(stdin_pipe[0], STDIN_FILENO);
       close(stdin_pipe[0]);
+    } else {
+      dup2(devnull_fd, STDIN_FILENO);
     }
 
     // Redirect stdout
-    close(stdout_pipe[0]);  // Close read end
     dup2(stdout_pipe[1], STDOUT_FILENO);
     close(stdout_pipe[1]);
 
     // Redirect stderr
-    close(stderr_pipe[0]);  // Close read end
     dup2(stderr_pipe[1], STDERR_FILENO);
     close(stderr_pipe[1]);
 
@@ -541,6 +566,9 @@ DefaultScriptProvider::start_execution(const std::string & entity_id, const std:
   // --- Parent process ---
 
   setpgid(child_pid, child_pid);  // Also set in parent (race-free with child's setpgid(0,0))
+  if (devnull_fd >= 0) {
+    close(devnull_fd);
+  }
 
   // Close pipe ends we don't use
   close(stdout_pipe[1]);
