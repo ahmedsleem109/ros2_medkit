@@ -32,13 +32,20 @@ include(ROS2MedkitCompat)
 
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(ros2_medkit_fault_detection REQUIRED)
 find_package(ros2_medkit_msgs REQUIRED)
+
+# ROS-free core: filter and reporting logic
+include(cmake/fault_reporter_core.cmake)
 
 # Library target
 add_library(fault_reporter_lib SHARED
   src/fault_reporter.cpp
-  src/local_filter.cpp
 )
+
+# The core is linked into the library and not installed on its own.
+target_link_libraries(fault_reporter_lib $<BUILD_INTERFACE:fault_reporter_core>
+  ros2_medkit_fault_detection::ros2_medkit_fault_detection)
 
 target_include_directories(fault_reporter_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -66,7 +73,7 @@ install(DIRECTORY include/
 
 # Export for downstream packages
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(rclcpp rclcpp_lifecycle ros2_medkit_msgs)
+ament_export_dependencies(rclcpp rclcpp_lifecycle ros2_medkit_fault_detection ros2_medkit_msgs)
 
 # Testing
 if(BUILD_TESTING)
@@ -90,6 +97,11 @@ if(BUILD_TESTING)
   medkit_add_gtest(test_fault_reporter_construction test/test_fault_reporter_construction.cpp)
   target_link_libraries(test_fault_reporter_construction fault_reporter_lib)
   medkit_target_dependencies(test_fault_reporter_construction rclcpp rclcpp_lifecycle ros2_medkit_msgs)
+
+  # Pure logic: links the ROS-free core only, creates no node.
+  medkit_add_gtest(test_validate_filter_params test/test_validate_filter_params.cpp)
+  target_link_libraries(test_validate_filter_params fault_reporter_core)
+  medkit_test_needs_no_domain(test_validate_filter_params)
 
   # Integration tests
   install(DIRECTORY test
